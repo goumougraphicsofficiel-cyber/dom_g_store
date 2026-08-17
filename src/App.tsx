@@ -1,0 +1,1 @@
+import { BrowserRouter } from 'react-router-dom';import { Toaster } from 'sonner';import { StoreProvider } from './context/StoreContext';import { AppRoutes } from './routes/AppRoutes';export default function App(){return <BrowserRouter><StoreProvider><AppRoutes/><Toaster richColors position="top-right"/></StoreProvider></BrowserRouter>}
