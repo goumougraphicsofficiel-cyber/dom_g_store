@@ -9,4 +9,3 @@ export const customerService=resource<User>('customers',customers)
 export const reviewService=resource<Review>('reviews',reviews)
 export const promotionService=resource<Promotion>('promotions',promotions)
 export const cartService={get:()=>storage.get('cart',[]),save:(v:unknown)=>storage.set('cart',v)}
-export const authService={login:(email:string,password:string)=>{const users=customerService.list();return users.find(u=>u.email===email&&storage.get(`password:${u.id}`,'')===password)??null},register:(user:User,password:string)=>{customerService.save([...customerService.list(),user]);storage.set(`password:${user.id}`,password);return user}}
