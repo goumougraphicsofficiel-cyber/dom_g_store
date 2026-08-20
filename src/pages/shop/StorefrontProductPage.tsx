@@ -14,6 +14,7 @@ function ProductDetails({ product, related }: { product: Product; related: Produ
   const [color, setColor] = useState(product.colors?.[0])
   const [size, setSize] = useState(product.sizes?.[0])
   const productReviews = reviews.filter(review => review.productId === product.id)
+  const isOutOfStock = product.stock <= 0
 
   return <div className="container section">
     <div className="product-detail">
@@ -25,13 +26,13 @@ function ProductDetails({ product, related }: { product: Product; related: Produ
         <span className="eyebrow">{[product.brand, product.reference].filter(Boolean).join(' · ')}</span>
         <h1>{product.name}</h1>
         <div className="detail-price">{money(product.price)} {product.oldPrice !== undefined ? <del>{money(product.oldPrice)}</del> : null}</div>
-        <StatusBadge status={product.stock > 0 ? 'en stock' : 'rupture'}/>
+        <StatusBadge status={isOutOfStock ? 'rupture' : 'en stock'}/>
         <p>{product.description}</p>
         {product.colors?.length ? <div className="option"><strong>Couleur</strong><div>{product.colors.map(value => <button className={color === value ? 'selected' : ''} onClick={() => setColor(value)} key={value}>{value}</button>)}</div></div> : null}
         {product.sizes?.length ? <div className="option"><strong>Taille</strong><div>{product.sizes.map(value => <button className={size === value ? 'selected' : ''} onClick={() => setSize(value)} key={value}>{value}</button>)}</div></div> : null}
         <div className="purchase">
-          <div className="quantity"><button onClick={() => setQuantity(Math.max(1, quantity - 1))}><Minus/></button><span>{quantity}</span><button onClick={() => setQuantity(Math.min(product.stock, quantity + 1))}><Plus/></button></div>
-          <Button disabled={product.stock === 0} onClick={() => addCart(product.id, quantity, color, size)}><ShoppingCart/> Ajouter au panier</Button>
+          <div className="quantity"><button disabled={isOutOfStock||quantity<=1} onClick={() => setQuantity(Math.max(1, quantity - 1))} aria-label="Diminuer la quantité"><Minus/></button><span>{quantity}</span><button disabled={isOutOfStock||quantity>=product.stock} onClick={() => setQuantity(Math.min(product.stock, quantity + 1))} aria-label="Augmenter la quantité"><Plus/></button></div>
+          <Button disabled={isOutOfStock} onClick={() => addCart(product.id, quantity, color, size)}><ShoppingCart/> {isOutOfStock?'Rupture de stock':'Ajouter au panier'}</Button>
           <button className={`icon-btn ${favorites.includes(product.id) ? 'active' : ''}`} onClick={() => toggleFavorite(product.id)} aria-label="Ajouter aux favoris"><Heart/></button>
         </div>
         <div className="delivery-notes"><span><Truck/> Livraison estimée sous 1 à 3 jours à Conakry</span><span><ShieldCheck/> Garantie 12 mois et retour sous 7 jours</span></div>
