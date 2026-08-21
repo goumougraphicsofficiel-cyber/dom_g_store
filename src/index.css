@@ -46,3 +46,44 @@
 @media(max-width:1050px){.brand-logo{width:126px;height:54px}.storefront-footer .footer-brand>.official-logo,.storefront-footer .footer-brand .brand-logo,.storefront-footer .footer-brand .brand-logo-image{width:145px!important}.premium-admin .admin-logo>.brand-logo,.premium-admin .admin-logo .brand-logo-image{width:150px!important}}
 @media(max-width:760px){.brand-logo{width:94px;height:48px}.storefront-footer .footer-brand>.official-logo,.storefront-footer .footer-brand .brand-logo,.storefront-footer .footer-brand .brand-logo-image{width:130px!important}.mobile-menu-head .brand-logo{width:144px;height:62px}.premium-admin .admin-logo>.brand-logo,.premium-admin .admin-logo .brand-logo-image{width:140px!important}.auth-logo .brand-logo{width:154px;height:66px}}
 @media(max-width:390px){.brand-logo{width:84px;height:44px}.storefront-footer .footer-brand>.official-logo,.storefront-footer .footer-brand .brand-logo,.storefront-footer .footer-brand .brand-logo-image{width:118px!important}}
+
+/* Authentication: the official source is square and must remain fully visible. */
+.auth-brand .official-logo,
+.auth-logo .official-logo{
+  display:flex;
+  width:max-content!important;
+  height:auto!important;
+  max-width:100%;
+  overflow:visible;
+}
+.auth-brand .brand-logo,
+.auth-logo .brand-logo{
+  width:clamp(150px,14vw,190px)!important;
+  height:auto!important;
+  aspect-ratio:1;
+  max-width:100%;
+  overflow:visible;
+  background:#fff;
+}
+.auth-brand .brand-logo-image,
+.auth-logo .brand-logo-image{
+  display:block;
+  width:100%!important;
+  height:100%!important;
+  max-width:100%;
+  max-height:100%;
+  object-fit:contain!important;
+  object-position:center;
+}
+.auth-logo{
+  width:100%;
+  overflow:visible;
+}
+.auth-logo .official-logo{
+  margin-inline:auto;
+}
+@media(max-width:760px){
+  .auth-logo .brand-logo{
+    width:clamp(148px,48vw,180px)!important;
+  }
+}

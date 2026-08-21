@@ -22,7 +22,9 @@ type StoreValue={
  authUser:SupabaseUser|null;profile:AuthProfile|null;authLoading:boolean;authError:string|null
  theme:'light'|'dark'
  addCart:(id:string,q?:number,color?:string,size?:string)=>void
- updateCart:(id:string,q:number)=>void;removeCart:(id:string)=>void;clearCart:()=>void
+ updateCart:(id:string,q:number,color?:string,size?:string)=>void
+ removeCart:(id:string,color?:string,size?:string)=>void
+ clearCart:()=>void
  toggleFavorite:(id:string)=>void
  login:(email:string,password:string)=>Promise<AuthProfile>
  register:()=>Promise<void>
@@ -30,6 +32,20 @@ type StoreValue={
 }
 
 const Ctx=createContext<StoreValue|null>(null)
+
+const sameCartLine=(line:CartLine,id:string,color?:string,size?:string)=>line.productId===id&&line.color===color&&line.size===size
+
+function normalizeCart(lines:CartLine[],products:Product[]){
+ const remaining=new Map(products.map(product=>[product.id,Math.max(0,Math.floor(product.stock))]))
+ return lines.flatMap(line=>{
+  const available=remaining.get(line.productId)??0
+  const requested=Number.isFinite(line.quantity)?Math.max(0,Math.floor(line.quantity)):0
+  const quantity=Math.min(requested,available)
+  if(quantity<=0)return []
+  remaining.set(line.productId,available-quantity)
+  return [{...line,quantity}]
+ })
+}
 
 function toAppUser(authUser:SupabaseUser,profile:AuthProfile):User{
  return {
@@ -62,6 +78,7 @@ export function StoreProvider({children}:{children:ReactNode}){
    .then(([nextProducts,nextCategories])=>{
     if(!active)return
     setP(nextProducts)
+    setCart(current=>normalizeCart(current,nextProducts))
     setC(nextCategories.filter(category=>category.active))
     setCatalogError(null)
    })
@@ -101,15 +118,17 @@ export function StoreProvider({children}:{children:ReactNode}){
  },[applyAuthenticatedUser])
 
  const persist=<T,>(setter:(v:T[])=>void,service:{save:(v:T[])=>void})=>(v:T[])=>{setter(v);service.save(v)}
- const addCart=(id:string,q=1,color?:string,size?:string)=>{const product=products.find(item=>item.id===id);if(!product)return toast.error('Ce produit est introuvable.');if(product.stock<=0)return toast.error('Ce produit est en rupture de stock.');const requested=Math.max(1,Math.floor(q)),inCart=cart.filter(line=>line.productId===id).reduce((total,line)=>total+line.quantity,0),available=product.stock-inCart;if(available<=0)return toast.error('Le stock disponible est déjà dans votre panier.');const added=Math.min(requested,available);setCart(old=>{const hit=old.find(x=>x.productId===id&&x.color===color&&x.size===size);return hit?old.map(x=>x===hit?{...x,quantity:x.quantity+added}:x):[...old,{productId:id,quantity:added,color,size}]});toast.success(added<requested?`Quantité ajustée au stock disponible (${product.stock}).`:'Produit ajouté au panier')}
- const updateCart=(id:string,q:number)=>{const product=products.find(item=>item.id===id);if(!product||product.stock<=0){setCart(old=>old.filter(line=>line.productId!==id));toast.error('Ce produit est en rupture de stock.');return}const quantity=Math.min(Math.floor(q),product.stock);setCart(old=>quantity<1?old.filter(x=>x.productId!==id):old.map(x=>x.productId===id?{...x,quantity}:x));if(q>product.stock)toast.error(`La quantité maximale disponible est ${product.stock}.`)}
+ const addCart=(id:string,q=1,color?:string,size?:string)=>{const product=products.find(item=>item.id===id);if(!product)return toast.error('Ce produit est introuvable.');if(product.stock<=0)return toast.error('Produit actuellement indisponible.');const requested=Math.max(1,Math.floor(q)),inCart=cart.filter(line=>line.productId===id).reduce((total,line)=>total+line.quantity,0),available=product.stock-inCart;if(available<=0)return toast.error('Stock maximum atteint.');const added=Math.min(requested,available);setCart(old=>{const hit=old.find(line=>sameCartLine(line,id,color,size));return hit?old.map(line=>line===hit?{...line,quantity:line.quantity+added}:line):[...old,{productId:id,quantity:added,color,size}]});if(added<requested)toast.warning(`Stock maximum atteint : ${product.stock} disponible${product.stock>1?'s':''}.`);else toast.success('Produit ajouté au panier.')}
+ const updateCart=(id:string,q:number,color?:string,size?:string)=>{const product=products.find(item=>item.id===id);if(!product||product.stock<=0){setCart(old=>old.filter(line=>line.productId!==id));toast.error('Produit actuellement indisponible.');return}const requested=Math.floor(q);if(requested<1){setCart(old=>old.filter(line=>!sameCartLine(line,id,color,size)));toast.success('Produit retiré.');return}const reservedByOtherLines=cart.filter(line=>line.productId===id&&!sameCartLine(line,id,color,size)).reduce((total,line)=>total+line.quantity,0),available=Math.max(0,product.stock-reservedByOtherLines),quantity=Math.min(requested,available);if(quantity<1){toast.error('Stock maximum atteint.');return}setCart(old=>old.map(line=>sameCartLine(line,id,color,size)?{...line,quantity}:line));if(requested>available)toast.warning(`Stock maximum atteint : ${product.stock} disponible${product.stock>1?'s':''}.`);else toast.success('Quantité mise à jour.')}
+ const removeCart=(id:string,color?:string,size?:string)=>{setCart(old=>old.filter(line=>!sameCartLine(line,id,color,size)));toast.success('Produit retiré.')}
+ const clearCart=()=>{if(!cart.length)return;setCart([]);toast.success('Panier vidé.')}
  const toggleFavorite=(id:string)=>setFavorites(old=>{const has=old.includes(id);toast.success(has?'Retiré des favoris':'Ajouté aux favoris');return has?old.filter(x=>x!==id):[...old,id]})
  const login=async(email:string,password:string)=>{const result=await signIn(email,password);setAuthUser(result.user);setProfile(result.profile);setUser(toAppUser(result.user,result.profile));setAuthError(null);return result.profile}
  const register=async()=>{throw new AuthenticationError('L’inscription publique n’est pas encore disponible.','unknown')}
  const logout=async()=>{try{await signOut()}catch(error){toast.error(error instanceof Error?error.message:'La déconnexion a échoué.')}finally{setAuthUser(null);setProfile(null);setUser(null);setAuthError(null)}toast.success('Vous êtes déconnecté')}
  const updateUser=(nextUser:User)=>{setUser(nextUser);const all=customers.map(x=>x.id===nextUser.id?nextUser:x);setCu(all);customerService.save(all)}
  const saveOrder=(order:Order)=>{const all=[order,...orders];setO(all);orderService.save(all);setCart([])}
- const value={products,setProducts:setP,categories,setCategories:setC,catalogLoading,catalogError,orders,setOrders:persist(setO,orderService),customers,setCustomers:persist(setCu,customerService),reviews,setReviews:persist(setR,reviewService),promotions,setPromotions:persist(setPr,promotionService),cart,favorites,user,authUser,profile,authLoading,authError,theme,addCart,updateCart,removeCart:(id:string)=>setCart(x=>x.filter(v=>v.productId!==id)),clearCart:()=>setCart([]),toggleFavorite,login,register,logout,updateUser,toggleTheme:()=>setTheme(x=>x==='light'?'dark':'light'),saveOrder}
+ const value={products,setProducts:setP,categories,setCategories:setC,catalogLoading,catalogError,orders,setOrders:persist(setO,orderService),customers,setCustomers:persist(setCu,customerService),reviews,setReviews:persist(setR,reviewService),promotions,setPromotions:persist(setPr,promotionService),cart,favorites,user,authUser,profile,authLoading,authError,theme,addCart,updateCart,removeCart,clearCart,toggleFavorite,login,register,logout,updateUser,toggleTheme:()=>setTheme(x=>x==='light'?'dark':'light'),saveOrder}
  return <Ctx.Provider value={value}>{children}</Ctx.Provider>
 }
 
