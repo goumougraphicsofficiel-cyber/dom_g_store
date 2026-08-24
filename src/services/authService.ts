@@ -1,6 +1,7 @@
 import type { User as SupabaseUser } from '@supabase/supabase-js'
 import { supabase } from '../lib/supabase'
 import type { AuthProfile } from '../types'
+import { notifyPasswordReset } from './smsNotificationService'
 
 export class AuthenticationError extends Error {
   readonly code:'invalid_credentials'|'profile_missing'|'inactive'|'network'|'signup'|'recovery'|'unknown'
@@ -103,9 +104,15 @@ export async function requestPasswordReset(email:string):Promise<void>{
  if(error)throw new AuthenticationError(isNetworkError(error.message)?'Impossible de joindre Supabase. Vérifiez votre connexion.':'Impossible d’envoyer le lien de réinitialisation.','recovery')
 }
 
-export async function updatePassword(password:string):Promise<void>{
+export async function updatePassword(password:string):Promise<{smsSent:boolean}>{
  const {error}=await supabase.auth.updateUser({password})
  if(error)throw new AuthenticationError(error.message.toLowerCase().includes('session')?'Le lien de réinitialisation est invalide ou a expiré.':'Impossible de modifier le mot de passe.','recovery')
+ try{
+  await notifyPasswordReset()
+  return {smsSent:true}
+ }catch{
+  return {smsSent:false}
+ }
 }
 
 export async function signOut():Promise<void>{

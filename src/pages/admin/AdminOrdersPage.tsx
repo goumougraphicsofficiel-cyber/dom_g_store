@@ -5,6 +5,7 @@ import { toast } from 'sonner'
 import { Card, EmptyState, Input, LoadingSkeleton, PageHeader } from '../../components/ui'
 import { ORDER_STATUSES, PAYMENT_STATUSES, supabaseOrderService, type AdminOrder, type AdminOrderItem, type SupabaseOrderStatus, type SupabasePaymentStatus } from '../../services/supabaseOrderService'
 import { money } from '../../utils'
+import { sendOrderStatusEmail } from '../../services/transactionalEmailService'
 import { AdminLayout } from './AdminPages'
 
 const orderLabels: Record<SupabaseOrderStatus, string> = {
@@ -48,7 +49,11 @@ export function AdminOrdersPage() {
 
   const changeStatus = async (order: AdminOrder, status: SupabaseOrderStatus) => {
     setUpdatingId(order.id)
-    try { mergeOrder(await supabaseOrderService.updateStatus(order.id, status)); toast.success('Statut de commande mis à jour') }
+    try {
+      mergeOrder(await supabaseOrderService.updateStatus(order.id, status))
+      try { await sendOrderStatusEmail(order.id, status); toast.success('Statut mis à jour et e-mail envoyé') }
+      catch { toast.warning('Statut mis à jour, mais l’e-mail client n’a pas pu être envoyé.') }
+    }
     catch (cause) { toast.error(`Mise à jour impossible : ${errorMessage(cause)}`) }
     finally { setUpdatingId(null) }
   }
@@ -100,7 +105,10 @@ export function AdminOrderDetailPage() {
         ? await supabaseOrderService.updateStatus(detail.order.id, value as SupabaseOrderStatus)
         : await supabaseOrderService.updatePaymentStatus(detail.order.id, value as SupabasePaymentStatus)
       setDetail(current => current ? { ...current, order } : current)
-      toast.success(kind === 'order' ? 'Statut de commande mis à jour' : 'Statut de paiement mis à jour')
+      if (kind === 'order') {
+        try { await sendOrderStatusEmail(order.id, order.status); toast.success('Statut mis à jour et e-mail envoyé') }
+        catch { toast.warning('Statut mis à jour, mais l’e-mail client n’a pas pu être envoyé.') }
+      } else toast.success('Statut de paiement mis à jour')
     } catch (cause) {
       toast.error(`Mise à jour impossible : ${errorMessage(cause)}`)
     } finally { setUpdating(false) }

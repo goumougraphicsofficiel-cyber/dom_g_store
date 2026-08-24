@@ -6,6 +6,7 @@ import { Button, Card, EmptyState, Input, LoadingSkeleton, PageHeader } from '..
 import { emptyAddress, useStore } from '../../context/StoreContext'
 import { createOrderNumber, OrderCreationError, supabaseOrderService, type AdminOrder } from '../../services/supabaseOrderService'
 import { storefrontProductService } from '../../services/storefrontProductService'
+import { sendOrderConfirmationEmails } from '../../services/transactionalEmailService'
 import type { Address } from '../../types'
 import { money, uid } from '../../utils'
 
@@ -75,6 +76,14 @@ export function SupabaseCheckoutPage() {
           quantity: line.quantity,
         })),
       })
+      let emailWarning = false
+      try {
+        const emailResult = await sendOrderConfirmationEmails(result.order.id)
+        emailWarning = !emailResult.ok
+      } catch (emailError) {
+        emailWarning = true
+        console.error('Commande créée, mais notification e-mail indisponible.', emailError)
+      }
       try {
         setProducts(await storefrontProductService.list())
       } catch (refreshError) {
@@ -83,7 +92,8 @@ export function SupabaseCheckoutPage() {
       }
       clearCart()
       orderNumberRef.current = null
-      toast.success('Commande enregistrée dans Supabase')
+      if (emailWarning) toast.warning('Votre commande a bien été enregistrée, mais l’e-mail de confirmation n’a pas pu être envoyé immédiatement.')
+      else toast.success('Commande enregistrée dans Supabase')
       navigate(`/commande/confirmation/${result.order.id}`)
     } catch (error) {
       console.error('Échec de création de la commande Supabase.', error)

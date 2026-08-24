@@ -52,7 +52,7 @@ type ResetForm=z.infer<typeof resetSchema>
 export function ResetPasswordPage(){
  const navigate=useNavigate(),[busy,setBusy]=useState(false)
  const {register,handleSubmit,formState:{errors}}=useForm<ResetForm>({resolver:zodResolver(resetSchema)})
- const submit=async(values:ResetForm)=>{setBusy(true);try{await updatePassword(values.password);toast.success('Votre mot de passe a été modifié.');navigate('/compte',{replace:true})}catch(error){toast.error(error instanceof Error?error.message:'La réinitialisation a échoué.')}finally{setBusy(false)}}
+ const submit=async(values:ResetForm)=>{setBusy(true);try{const result=await updatePassword(values.password);toast.success('Votre mot de passe a été modifié.');if(!result.smsSent)toast.warning('Le SMS de sécurité n’a pas pu être envoyé.');navigate('/compte',{replace:true})}catch(error){toast.error(error instanceof Error?error.message:'La réinitialisation a échoué.')}finally{setBusy(false)}}
  return <AuthShell title="Nouveau mot de passe" subtitle="Choisissez un mot de passe sécurisé pour votre compte."><form onSubmit={handleSubmit(submit)}><FormField label="Nouveau mot de passe" error={errors.password?.message}><Input {...register('password')} type="password" autoComplete="new-password"/></FormField><FormField label="Confirmer le mot de passe" error={errors.confirm?.message}><Input {...register('confirm')} type="password" autoComplete="new-password"/></FormField><Button className="full" disabled={busy}>{busy?'Mise à jour…':'Enregistrer le mot de passe'}</Button></form></AuthShell>
 }
 
