@@ -17,6 +17,7 @@ const SearchPage = lazy(() => import('../pages/shop/ShopPages').then(module => (
 const LoginPage = lazy(() => import('../pages/auth/AuthPages').then(module => ({ default: module.LoginPage })))
 const RegisterPage = lazy(() => import('../pages/auth/AuthPages').then(module => ({ default: module.RegisterPage })))
 const ForgotPage = lazy(() => import('../pages/auth/AuthPages').then(module => ({ default: module.ForgotPage })))
+const ResetPasswordPage = lazy(() => import('../pages/auth/AuthPages').then(module => ({ default: module.ResetPasswordPage })))
 
 const AccountDashboard = lazy(() => import('../pages/account/AccountPages').then(module => ({ default: module.AccountDashboard })))
 const ProfilePage = lazy(() => import('../pages/account/AccountPages').then(module => ({ default: module.ProfilePage })))
@@ -39,6 +40,7 @@ const AdminProductsPage = lazy(() => import('../pages/admin/AdminProductsPage').
 const AdminCategoriesPage = lazy(() => import('../pages/admin/AdminCategoriesPage').then(module => ({ default: module.AdminCategoriesPage })))
 const AdminStocksPage = lazy(() => import('../pages/admin/AdminStocksPage').then(module => ({ default: module.AdminStocksPage })))
 const AdminOrdersPage = lazy(() => import('../pages/admin/AdminOrdersPage').then(module => ({ default: module.AdminOrdersPage })))
+const AdminOrderDetailPage = lazy(() => import('../pages/admin/AdminOrdersPage').then(module => ({ default: module.AdminOrderDetailPage })))
 const AdminClientsPage = lazy(() => import('../pages/admin/AdminClientsPage').then(module => ({ default: module.AdminClientsPage })))
 const NotFoundPage = lazy(() => import('../pages/NotFoundPage').then(module => ({ default: module.NotFoundPage })))
 
@@ -78,11 +80,13 @@ export function AppRoutes() {
       <Route path="connexion" element={<LoginPage/>}/>
       <Route path="inscription" element={<RegisterPage/>}/>
       <Route path="mot-de-passe-oublie" element={<ForgotPage/>}/>
+      <Route path="reinitialiser-mot-de-passe" element={<ResetPasswordPage/>}/>
       <Route path="admin" element={<AdminRoute><AdminDashboard/></AdminRoute>}/>
       <Route path="admin/produits" element={<AdminRoute><AdminProductsPage/></AdminRoute>}/>
       <Route path="admin/categories" element={<AdminRoute><AdminCategoriesPage/></AdminRoute>}/>
       <Route path="admin/stocks" element={<AdminRoute><AdminStocksPage/></AdminRoute>}/>
       <Route path="admin/commandes" element={<AdminRoute><AdminOrdersPage/></AdminRoute>}/>
+      <Route path="admin/commandes/:id" element={<AdminRoute><AdminOrderDetailPage/></AdminRoute>}/>
       <Route path="admin/clients" element={<AdminRoute><AdminClientsPage/></AdminRoute>}/>
       <Route path="admin/clients/:id" element={<AdminRoute><AdminClientsPage/></AdminRoute>}/>
       <Route path="admin/promotions" element={<AdminRoute><AdminPromotions/></AdminRoute>}/>

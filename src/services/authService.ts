@@ -3,16 +3,30 @@ import { supabase } from '../lib/supabase'
 import type { AuthProfile } from '../types'
 
 export class AuthenticationError extends Error {
-  readonly code:'invalid_credentials'|'profile_missing'|'inactive'|'network'|'unknown'
+  readonly code:'invalid_credentials'|'profile_missing'|'inactive'|'network'|'signup'|'recovery'|'unknown'
 
   constructor(
     message:string,
-    code:'invalid_credentials'|'profile_missing'|'inactive'|'network'|'unknown',
+    code:'invalid_credentials'|'profile_missing'|'inactive'|'network'|'signup'|'recovery'|'unknown',
   ) {
     super(message)
     this.name='AuthenticationError'
     this.code=code
   }
+}
+
+export type ClientRegistrationInput={
+ email:string
+ password:string
+ firstName:string
+ lastName:string
+ phone:string
+}
+
+export type ClientRegistrationResult={
+ user:SupabaseUser
+ profile:AuthProfile|null
+ confirmationRequired:boolean
 }
 
 const isNetworkError=(message:string)=>/fetch|network|connexion|timeout/i.test(message)
@@ -55,6 +69,43 @@ export async function signIn(email:string,password:string):Promise<{user:Supabas
   if(error instanceof AuthenticationError&&error.code!=='inactive')await supabase.auth.signOut()
   throw error
  }
+}
+
+export async function signUpClient(input:ClientRegistrationInput):Promise<ClientRegistrationResult>{
+ const {data,error}=await supabase.auth.signUp({
+  email:input.email.trim().toLowerCase(),
+  password:input.password,
+  options:{
+   emailRedirectTo:`${window.location.origin}/connexion`,
+   data:{
+    first_name:input.firstName.trim(),
+    last_name:input.lastName.trim(),
+    phone:input.phone.trim(),
+   },
+  },
+ })
+ if(error){
+  const network=isNetworkError(error.message)
+  throw new AuthenticationError(
+   network?'Impossible de joindre Supabase. Vérifiez votre connexion.':error.message.toLowerCase().includes('already registered')?'Un compte existe déjà avec cette adresse e-mail.':'Impossible de créer le compte. Vérifiez les informations saisies.',
+   network?'network':'signup',
+  )
+ }
+ if(!data.user)throw new AuthenticationError('Supabase n’a pas retourné le compte créé.','signup')
+ if(!data.session)return {user:data.user,profile:null,confirmationRequired:true}
+ return {user:data.user,profile:await fetchProfile(data.user.id),confirmationRequired:false}
+}
+
+export async function requestPasswordReset(email:string):Promise<void>{
+ const {error}=await supabase.auth.resetPasswordForEmail(email.trim().toLowerCase(),{
+  redirectTo:`${window.location.origin}/reinitialiser-mot-de-passe`,
+ })
+ if(error)throw new AuthenticationError(isNetworkError(error.message)?'Impossible de joindre Supabase. Vérifiez votre connexion.':'Impossible d’envoyer le lien de réinitialisation.','recovery')
+}
+
+export async function updatePassword(password:string):Promise<void>{
+ const {error}=await supabase.auth.updateUser({password})
+ if(error)throw new AuthenticationError(error.message.toLowerCase().includes('session')?'Le lien de réinitialisation est invalide ou a expiré.':'Impossible de modifier le mot de passe.','recovery')
 }
 
 export async function signOut():Promise<void>{

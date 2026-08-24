@@ -85,22 +85,33 @@ export type AdminOrder = {
   updatedAt: string
 }
 
+export type ClientOrder = {
+  id: string
+  orderNumber: string
+  status: SupabaseOrderStatus
+  paymentStatus: SupabasePaymentStatus
+  totalAmount: number
+  createdAt: string
+}
+
+type ClientOrderRow = {
+  id: string
+  order_number: string
+  status: SupabaseOrderStatus
+  payment_status: SupabasePaymentStatus
+  total_amount: number | string
+  created_at: string
+}
+
 export type CreateOrderItemInput = {
   productId: string
   variantId: string | null
-  productName: string
-  productSku: string
   variantDetails: string
   quantity: number
-  unitPrice: number
 }
 
 export type CreateOrderInput = {
-  userId: string
-  subtotal: number
-  discountAmount: number
-  shippingAmount: number
-  totalAmount: number
+  orderNumber: string
   shippingMethod: string
   shippingFirstName: string
   shippingLastName: string
@@ -112,16 +123,33 @@ export type CreateOrderInput = {
   items: CreateOrderItemInput[]
 }
 
-export class OrderItemsCreationError extends Error {
-  readonly order: AdminOrder
-  readonly cause: unknown
+export type OrderCreationErrorCode = 'stock' | 'product' | 'variant' | 'inventory' | 'auth' | 'unknown'
 
-  constructor(order: AdminOrder, cause: unknown) {
-    super(`La commande ${order.orderNumber} a été créée, mais ses articles n’ont pas pu être enregistrés.`)
-    this.name = 'OrderItemsCreationError'
-    this.order = order
+export class OrderCreationError extends Error {
+  readonly code: OrderCreationErrorCode
+  readonly cause?: unknown
+
+  constructor(message: string, code: OrderCreationErrorCode, cause?: unknown) {
+    super(message)
+    this.name = 'OrderCreationError'
+    this.code = code
     this.cause = cause
   }
+}
+
+type CreateOrderRpcRow = { order_id: string; order_number: string }
+
+export function createOrderNumber() {
+  return `DGS-${new Date().getFullYear()}-${Date.now().toString(36).toUpperCase()}-${crypto.randomUUID().slice(0, 6).toUpperCase()}`
+}
+
+function rpcCreationError(error: { message: string }): OrderCreationError {
+  if (error.message.includes('INSUFFICIENT_STOCK')) return new OrderCreationError('Stock insuffisant pour l’un des produits de votre panier.', 'stock', error)
+  if (error.message.includes('INVENTORY_NOT_FOUND')) return new OrderCreationError('Le stock de l’un des produits est indisponible.', 'inventory', error)
+  if (error.message.includes('PRODUCT_UNAVAILABLE')) return new OrderCreationError('L’un des produits de votre panier n’est plus disponible.', 'product', error)
+  if (error.message.includes('VARIANT_UNAVAILABLE')) return new OrderCreationError('L’une des variantes sélectionnées n’est plus disponible.', 'variant', error)
+  if (error.message.includes('AUTH_REQUIRED') || error.message.includes('ACTIVE_CLIENT_PROFILE_REQUIRED')) return new OrderCreationError('Votre session client n’est plus valide. Veuillez vous reconnecter.', 'auth', error)
+  return new OrderCreationError('Impossible d’enregistrer la commande. Votre panier a été conservé.', 'unknown', error)
 }
 
 const orderColumns = `
@@ -130,6 +158,13 @@ const orderColumns = `
   shipping_last_name, shipping_phone, shipping_address, shipping_district,
   shipping_city, shipping_country, tracking_number, created_at, updated_at,
   profile:profiles!orders_user_id_fkey (first_name, last_name, phone)
+`
+
+const clientOrderDetailColumns = `
+  id, user_id, order_number, status, payment_status, subtotal, discount_amount,
+  shipping_amount, total_amount, shipping_method, shipping_first_name,
+  shipping_last_name, shipping_phone, shipping_address, shipping_district,
+  shipping_city, shipping_country, tracking_number, created_at, updated_at
 `
 
 function toNumber(value: number | string | null) {
@@ -166,10 +201,51 @@ function toOrder(row: OrderRow): AdminOrder {
 }
 
 export const supabaseOrderService = {
+  async listForCurrentUser(): Promise<ClientOrder[]> {
+    const { data: authData, error: authError } = await supabase.auth.getUser()
+    if (authError) throw authError
+    if (!authData.user) throw new Error('Votre session a expiré. Veuillez vous reconnecter.')
+
+    const { data, error } = await supabase
+      .from('orders')
+      .select('id, order_number, status, payment_status, total_amount, created_at')
+      .eq('user_id', authData.user.id)
+      .order('created_at', { ascending: false })
+
+    if (error) throw error
+    return ((data ?? []) as ClientOrderRow[]).map(row => ({
+      id: row.id,
+      orderNumber: row.order_number,
+      status: row.status,
+      paymentStatus: row.payment_status,
+      totalAmount: Number(row.total_amount),
+      createdAt: row.created_at,
+    }))
+  },
+
   async list(): Promise<AdminOrder[]> {
     const { data, error } = await supabase.from('orders').select(orderColumns).order('created_at', { ascending: false })
     if (error) throw error
     return ((data ?? []) as unknown as OrderRow[]).map(toOrder)
+  },
+
+  async getForCurrentUser(id: string): Promise<{ order: AdminOrder; items: AdminOrderItem[] } | null> {
+    const { data: authData, error: authError } = await supabase.auth.getUser()
+    if (authError) throw authError
+    if (!authData.user) throw new Error('Votre session a expiré. Veuillez vous reconnecter.')
+
+    const { data, error } = await supabase
+      .from('orders')
+      .select(clientOrderDetailColumns)
+      .eq('id', id)
+      .eq('user_id', authData.user.id)
+      .maybeSingle()
+
+    if (error) throw error
+    if (!data) return null
+
+    const order = toOrder({ ...(data as Omit<OrderRow, 'profile'>), profile: null })
+    return { order, items: await this.listItems(order.id) }
   },
 
   async listItems(orderId: string): Promise<AdminOrderItem[]> {
@@ -200,44 +276,41 @@ export const supabaseOrderService = {
     return toOrder(data as unknown as OrderRow)
   },
 
-  async create(input: CreateOrderInput): Promise<{ order: AdminOrder; items: AdminOrderItem[] }> {
-    const orderNumber = `DGS-${new Date().getFullYear()}-${Date.now().toString(36).toUpperCase()}-${crypto.randomUUID().slice(0, 6).toUpperCase()}`
-    const { data, error } = await supabase.from('orders').insert({
-      user_id: input.userId,
-      order_number: orderNumber,
-      status: 'en_attente' satisfies SupabaseOrderStatus,
-      payment_status: 'en_attente' satisfies SupabasePaymentStatus,
-      subtotal: input.subtotal,
-      discount_amount: input.discountAmount,
-      shipping_amount: input.shippingAmount,
-      total_amount: input.totalAmount,
-      shipping_method: input.shippingMethod,
-      shipping_first_name: input.shippingFirstName || null,
-      shipping_last_name: input.shippingLastName || null,
-      shipping_phone: input.shippingPhone || null,
-      shipping_address: input.shippingAddress || null,
-      shipping_district: input.shippingDistrict || null,
-      shipping_city: input.shippingCity || null,
-      shipping_country: input.shippingCountry || null,
-      tracking_number: null,
-    }).select(orderColumns).single()
+  async getAdminDetail(id: string): Promise<{ order: AdminOrder; items: AdminOrderItem[] } | null> {
+    const { data, error } = await supabase.from('orders').select(orderColumns).eq('id', id).maybeSingle()
     if (error) throw error
-
+    if (!data) return null
     const order = toOrder(data as unknown as OrderRow)
-    const { error: itemsError } = await supabase.from('order_items').insert(input.items.map(item => ({
-      order_id: order.id,
+    return { order, items: await this.listItems(order.id) }
+  },
+
+  async create(input: CreateOrderInput): Promise<{ order: AdminOrder; items: AdminOrderItem[] }> {
+    const { data, error } = await supabase.rpc('create_order_with_stock', {
+      p_order_number: input.orderNumber,
+      p_shipping: {
+        method: input.shippingMethod,
+        first_name: input.shippingFirstName,
+        last_name: input.shippingLastName,
+        phone: input.shippingPhone,
+        address: input.shippingAddress,
+        district: input.shippingDistrict,
+        city: input.shippingCity,
+        country: input.shippingCountry,
+      },
+      p_items: input.items.map(item => ({
       product_id: item.productId,
       variant_id: item.variantId,
-      product_name: item.productName,
-      product_sku: item.productSku || null,
       variant_details: item.variantDetails || null,
       quantity: item.quantity,
-      unit_price: item.unitPrice,
-      total_price: item.unitPrice * item.quantity,
-    })))
+      })),
+    })
+    if (error) throw rpcCreationError(error)
 
-    if (itemsError) throw new OrderItemsCreationError(order, itemsError)
-    return { order, items: await this.listItems(order.id) }
+    const result = ((data ?? []) as CreateOrderRpcRow[])[0]
+    if (!result?.order_id) throw new OrderCreationError('Supabase n’a pas retourné la commande créée.', 'unknown')
+    const detail = await this.getForCurrentUser(result.order_id)
+    if (!detail) throw new OrderCreationError(`La commande ${result.order_number} a été créée mais ne peut pas être relue.`, 'unknown')
+    return detail
   },
 
   async updateStatus(id: string, status: SupabaseOrderStatus): Promise<AdminOrder> {

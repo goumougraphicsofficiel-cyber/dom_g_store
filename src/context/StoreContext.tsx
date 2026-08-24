@@ -3,7 +3,7 @@ import { createContext, useCallback, useContext, useEffect, useState, type React
 import type { User as SupabaseUser } from '@supabase/supabase-js'
 import { toast } from 'sonner'
 import { supabase } from '../lib/supabase'
-import { AuthenticationError, fetchProfile, signIn, signOut } from '../services/authService'
+import { fetchProfile, signIn, signOut, signUpClient, type ClientRegistrationInput, type ClientRegistrationResult } from '../services/authService'
 import { customerService, orderService, promotionService, reviewService } from '../services'
 import { storefrontProductService } from '../services/storefrontProductService'
 import { supabaseCategoryService } from '../services/supabaseCategoryService'
@@ -27,7 +27,7 @@ type StoreValue={
  clearCart:()=>void
  toggleFavorite:(id:string)=>void
  login:(email:string,password:string)=>Promise<AuthProfile>
- register:()=>Promise<void>
+ register:(input:ClientRegistrationInput)=>Promise<ClientRegistrationResult>
  logout:()=>Promise<void>;updateUser:(u:User)=>void;toggleTheme:()=>void;saveOrder:(o:Order)=>void
 }
 
@@ -124,7 +124,7 @@ export function StoreProvider({children}:{children:ReactNode}){
  const clearCart=()=>{if(!cart.length)return;setCart([]);toast.success('Panier vidé.')}
  const toggleFavorite=(id:string)=>setFavorites(old=>{const has=old.includes(id);toast.success(has?'Retiré des favoris':'Ajouté aux favoris');return has?old.filter(x=>x!==id):[...old,id]})
  const login=async(email:string,password:string)=>{const result=await signIn(email,password);setAuthUser(result.user);setProfile(result.profile);setUser(toAppUser(result.user,result.profile));setAuthError(null);return result.profile}
- const register=async()=>{throw new AuthenticationError('L’inscription publique n’est pas encore disponible.','unknown')}
+ const register=async(input:ClientRegistrationInput)=>{const result=await signUpClient(input);if(result.profile){setAuthUser(result.user);setProfile(result.profile);setUser(toAppUser(result.user,result.profile));setAuthError(null)}return result}
  const logout=async()=>{try{await signOut()}catch(error){toast.error(error instanceof Error?error.message:'La déconnexion a échoué.')}finally{setAuthUser(null);setProfile(null);setUser(null);setAuthError(null)}toast.success('Vous êtes déconnecté')}
  const updateUser=(nextUser:User)=>{setUser(nextUser);const all=customers.map(x=>x.id===nextUser.id?nextUser:x);setCu(all);customerService.save(all)}
  const saveOrder=(order:Order)=>{const all=[order,...orders];setO(all);orderService.save(all);setCart([])}

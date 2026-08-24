@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
 import { Eye, Search } from 'lucide-react'
+import { Link, useParams } from 'react-router-dom'
 import { toast } from 'sonner'
-import { Badge, EmptyState, Input, LoadingSkeleton, Modal, PageHeader, StatusBadge } from '../../components/ui'
+import { Card, EmptyState, Input, LoadingSkeleton, PageHeader } from '../../components/ui'
 import { ORDER_STATUSES, PAYMENT_STATUSES, supabaseOrderService, type AdminOrder, type AdminOrderItem, type SupabaseOrderStatus, type SupabasePaymentStatus } from '../../services/supabaseOrderService'
 import { money } from '../../utils'
 import { AdminLayout } from './AdminPages'
@@ -29,10 +30,6 @@ export function AdminOrdersPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [updatingId, setUpdatingId] = useState<string | null>(null)
-  const [selectedOrder, setSelectedOrder] = useState<AdminOrder | null>(null)
-  const [items, setItems] = useState<AdminOrderItem[]>([])
-  const [detailLoading, setDetailLoading] = useState(false)
-  const [detailError, setDetailError] = useState('')
 
   useEffect(() => {
     let active = true
@@ -45,22 +42,8 @@ export function AdminOrdersPage() {
     return () => { active = false }
   }, [])
 
-  const openDetail = async (order: AdminOrder) => {
-    setSelectedOrder(order)
-    setItems([])
-    setDetailError('')
-    setDetailLoading(true)
-    try { setItems(await supabaseOrderService.listItems(order.id)) }
-    catch (cause) {
-      const message = errorMessage(cause)
-      setDetailError(message)
-      toast.error(`Impossible de charger les articles : ${message}`)
-    } finally { setDetailLoading(false) }
-  }
-
   const mergeOrder = (updated: AdminOrder) => {
     setOrders(current => current.map(order => order.id === updated.id ? updated : order))
-    setSelectedOrder(current => current?.id === updated.id ? updated : current)
   }
 
   const changeStatus = async (order: AdminOrder, status: SupabaseOrderStatus) => {
@@ -83,20 +66,50 @@ export function AdminOrdersPage() {
   return <AdminLayout>
     <PageHeader title="Commandes" description="Suivez les paiements, préparations et livraisons."/>
     <div className="table-tools"><div className="search-field"><Search/><Input value={query} onChange={event => setQuery(event.target.value)} placeholder="Numéro de commande ou client…"/></div></div>
-    {loading ? <LoadingSkeleton/> : error ? <EmptyState title="Impossible de charger les commandes" text={error}/> : orders.length === 0 ? <EmptyState title="Aucune commande" text="Les commandes enregistrées dans Supabase apparaîtront ici."/> : filtered.length === 0 ? <EmptyState title="Aucun résultat" text="Modifiez votre recherche."/> : <div className="table-wrap"><table><thead><tr><th>N°</th><th>Client</th><th>Date</th><th>Montant</th><th>Paiement</th><th>Statut</th><th>Action</th></tr></thead><tbody>{filtered.map(order => <tr key={order.id}>
-      <td><strong>{order.orderNumber}</strong></td><td>{order.customerName}</td><td>{formatDate(order.createdAt)}</td><td>{money(order.totalAmount)}</td>
+    {loading ? <LoadingSkeleton/> : error ? <EmptyState title="Impossible de charger les commandes" text={error}/> : orders.length === 0 ? <EmptyState title="Aucune commande" text="Les commandes enregistrées dans Supabase apparaîtront ici."/> : filtered.length === 0 ? <EmptyState title="Aucun résultat" text="Modifiez votre recherche."/> : <div className="table-wrap"><table><thead><tr><th>N°</th><th>Client</th><th>Téléphone</th><th>Date</th><th>Montant</th><th>Livraison</th><th>Paiement</th><th>Statut</th><th>Action</th></tr></thead><tbody>{filtered.map(order => <tr key={order.id}>
+      <td><strong>{order.orderNumber}</strong></td><td>{order.customerName}</td><td>{order.customerPhone||'—'}</td><td>{formatDate(order.createdAt)}</td><td>{money(order.totalAmount)}</td><td>{order.shippingMethod||'—'}</td>
       <td><select aria-label={`Statut de paiement de ${order.orderNumber}`} disabled={updatingId === order.id} value={order.paymentStatus} onChange={event => void changePaymentStatus(order, event.target.value as SupabasePaymentStatus)}>{PAYMENT_STATUSES.map(status => <option value={status} key={status}>{paymentLabels[status]}</option>)}</select></td>
       <td><select aria-label={`Statut de ${order.orderNumber}`} disabled={updatingId === order.id} value={order.status} onChange={event => void changeStatus(order, event.target.value as SupabaseOrderStatus)}>{ORDER_STATUSES.map(status => <option value={status} key={status}>{orderLabels[status]}</option>)}</select></td>
-      <td><button className="icon-btn" aria-label={`Voir ${order.orderNumber}`} onClick={() => void openDetail(order)}><Eye/></button></td>
+      <td>{updatingId===order.id?<small role="status">Mise à jour…</small>:<Link className="icon-btn" aria-label={`Voir ${order.orderNumber}`} to={`/admin/commandes/${order.id}`}><Eye/></Link>}</td>
     </tr>)}</tbody></table></div>}
-
-    <Modal open={selectedOrder !== null} onClose={() => { if (!detailLoading) setSelectedOrder(null) }} title={selectedOrder ? `Commande ${selectedOrder.orderNumber}` : 'Commande'}>
-      {selectedOrder ? <div className="admin-order-detail">
-        <div className="between"><StatusBadge status={orderLabels[selectedOrder.status]}/><Badge tone="info">Paiement : {paymentLabels[selectedOrder.paymentStatus]}</Badge></div>
-        <section><h3>Articles</h3>{detailLoading ? <LoadingSkeleton/> : detailError ? <EmptyState title="Impossible de charger les articles" text={detailError}/> : items.length === 0 ? <EmptyState title="Aucun article enregistré"/> : items.map(item => <div className="invoice-line" key={item.id}><span><strong>{item.productName}</strong><small>{[item.productSku, item.variantDetails].filter(Boolean).join(' · ') || 'Sans variante'}</small></span><span>{item.quantity} × {money(item.unitPrice)}</span><strong>{money(item.totalPrice)}</strong></div>)}</section>
-        <div className="order-detail-grid"><section><h3>Livraison</h3><p><strong>{[selectedOrder.shippingFirstName, selectedOrder.shippingLastName].filter(Boolean).join(' ') || 'Non renseigné'}</strong><br/>{selectedOrder.shippingPhone || 'Téléphone non renseigné'}<br/>{selectedOrder.shippingAddress || 'Adresse non renseignée'}<br/>{[selectedOrder.shippingDistrict, selectedOrder.shippingCity, selectedOrder.shippingCountry].filter(Boolean).join(', ')}</p><p>Mode : {selectedOrder.shippingMethod || 'Non renseigné'}<br/>Suivi : {selectedOrder.trackingNumber || 'Non attribué'}</p></section>
-        <section><h3>Récapitulatif</h3><div className="invoice-totals"><span>Sous-total <strong>{money(selectedOrder.subtotal)}</strong></span><span>Réduction <strong>- {money(selectedOrder.discountAmount)}</strong></span><span>Livraison <strong>{money(selectedOrder.shippingAmount)}</strong></span><span className="total">Total <strong>{money(selectedOrder.totalAmount)}</strong></span></div></section></div>
-      </div> : null}
-    </Modal>
   </AdminLayout>
+}
+
+export function AdminOrderDetailPage() {
+  const { id } = useParams()
+  const [detail, setDetail] = useState<{ order: AdminOrder; items: AdminOrderItem[] } | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+  const [updating, setUpdating] = useState(false)
+
+  useEffect(() => {
+    let active = true
+    if (!id) return () => { active = false }
+    void supabaseOrderService.getAdminDetail(id).then(result => { if (active) setDetail(result) }).catch(cause => {
+      if (!active) return
+      setError(errorMessage(cause))
+    }).finally(() => { if (active) setLoading(false) })
+    return () => { active = false }
+  }, [id])
+
+  const updateOrder = async (kind: 'order' | 'payment', value: SupabaseOrderStatus | SupabasePaymentStatus) => {
+    if (!detail) return
+    setUpdating(true)
+    try {
+      const order = kind === 'order'
+        ? await supabaseOrderService.updateStatus(detail.order.id, value as SupabaseOrderStatus)
+        : await supabaseOrderService.updatePaymentStatus(detail.order.id, value as SupabasePaymentStatus)
+      setDetail(current => current ? { ...current, order } : current)
+      toast.success(kind === 'order' ? 'Statut de commande mis à jour' : 'Statut de paiement mis à jour')
+    } catch (cause) {
+      toast.error(`Mise à jour impossible : ${errorMessage(cause)}`)
+    } finally { setUpdating(false) }
+  }
+
+  if (loading) return <AdminLayout><LoadingSkeleton/></AdminLayout>
+  if (error) return <AdminLayout><EmptyState title="Impossible de charger la commande" text={error}/><Link className="btn secondary" to="/admin/commandes">Retour aux commandes</Link></AdminLayout>
+  if (!detail) return <AdminLayout><EmptyState title="Commande introuvable"/><Link className="btn secondary" to="/admin/commandes">Retour aux commandes</Link></AdminLayout>
+
+  const { order, items } = detail
+  return <AdminLayout><PageHeader title={`Commande ${order.orderNumber}`} description={`Créée le ${formatDate(order.createdAt)}`} action={<Link className="btn secondary" to="/admin/commandes">Retour aux commandes</Link>}/><Card><div className="order-detail-grid"><label>Statut de commande<select disabled={updating} value={order.status} onChange={event => void updateOrder('order', event.target.value as SupabaseOrderStatus)}>{ORDER_STATUSES.map(status => <option key={status} value={status}>{orderLabels[status]}</option>)}</select></label><label>Statut du paiement<select disabled={updating} value={order.paymentStatus} onChange={event => void updateOrder('payment', event.target.value as SupabasePaymentStatus)}>{PAYMENT_STATUSES.map(status => <option key={status} value={status}>{paymentLabels[status]}</option>)}</select></label></div>{updating?<p role="status">Mise à jour en cours…</p>:null}</Card><Card><h2>Client et livraison</h2><p><strong>{order.customerName}</strong><br/>{order.customerPhone||'Téléphone non renseigné'}<br/>{order.shippingAddress||'Adresse non renseignée'}<br/>{[order.shippingDistrict,order.shippingCity,order.shippingCountry].filter(Boolean).join(', ')}</p><p>Méthode : {order.shippingMethod||'Non renseignée'}{order.trackingNumber?<><br/>Suivi : {order.trackingNumber}</>:null}</p></Card><Card><h2>Articles</h2>{items.length?items.map(item=><div className="invoice-line" key={item.id}><span><strong>{item.productName}</strong><small>{item.productSku||'SKU non renseigné'}{item.variantDetails?` · ${item.variantDetails}`:''}</small></span><span>{item.quantity} × {money(item.unitPrice)}</span><strong>{money(item.totalPrice)}</strong></div>):<EmptyState title="Aucun article" text="Aucun article n’est associé à cette commande."/>}<div className="invoice-totals"><span>Sous-total <b>{money(order.subtotal)}</b></span><span>Réduction <b>-{money(order.discountAmount)}</b></span><span>Livraison <b>{money(order.shippingAmount)}</b></span><span className="total">Total <b>{money(order.totalAmount)}</b></span></div></Card><Link className="btn secondary" to="/admin/commandes">Retour aux commandes</Link></AdminLayout>
 }
