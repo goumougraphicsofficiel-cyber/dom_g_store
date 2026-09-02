@@ -1,3 +1,4 @@
+import { useEffect, useMemo, useState } from 'react'
 import { ArrowRight, Headphones, PackageCheck, ShieldCheck, Sparkles, Truck } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { CategoryImage } from '../../components/category/CategoryImage'
@@ -16,11 +17,23 @@ function ProductSection({ id, eyebrow, title, subtitle, products, emptyText }: {
 
 export function StorefrontHomePage() {
   const { products, categories, catalogLoading, catalogError } = useStore()
-  const heroProduct = products.find(product => product.featured && product.image) ?? products.find(product => product.stock > 0 && product.image) ?? products.find(product => product.image) ?? products[0]
+  const heroProducts = useMemo(() => {
+    const displayable = products.filter(product => product.image)
+    return [...displayable.filter(product => product.featured), ...displayable.filter(product => !product.featured && product.stock > 0), ...displayable.filter(product => !product.featured && product.stock <= 0)].slice(0, 4)
+  }, [products])
+  const [heroIndex, setHeroIndex] = useState(0)
+  const activeHeroIndex = heroProducts.length > 0 ? heroIndex % heroProducts.length : 0
+  const heroProduct = heroProducts[activeHeroIndex] ?? products[0]
   const featuredProducts = products.filter(product => product.featured)
   const essentials = (featuredProducts.length > 0 ? featuredProducts : products).slice(0, 4)
   const newProducts = products.filter(product => product.isNew).slice(0, 4)
   const discountedProducts = products.filter(product => product.oldPrice !== undefined).slice(0, 4)
+
+  useEffect(() => {
+    if (heroProducts.length < 2 || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
+    const interval = window.setInterval(() => setHeroIndex(current => (current + 1) % heroProducts.length), 4800)
+    return () => window.clearInterval(interval)
+  }, [heroProducts.length])
 
   if (catalogLoading) return <div className="container section"><LoadingSkeleton/></div>
   if (catalogError) return <div className="container section"><EmptyState title="Impossible de charger la boutique" text={catalogError}/></div>
@@ -40,7 +53,13 @@ export function StorefrontHomePage() {
           <div className="hero-trust"><span><ShieldCheck/> Produits sélectionnés</span><span><Truck/> Livraison suivie</span></div>
         </div>
         <div className="hero-visual">
-          {heroProduct?.image ? <Link to={`/produits/${heroProduct.id}`} className="hero-product"><img src={heroProduct.image} alt={heroProduct.name}/><div><span>{heroProduct.categoryName || 'Sélection Dom G'}</span><strong>{heroProduct.name}</strong><b>{new Intl.NumberFormat('fr-FR').format(heroProduct.price)} FG</b></div></Link> : <div className="hero-empty"><PackageCheck/><span>Votre prochaine découverte vous attend</span></div>}
+          {heroProduct?.image ? <div className="hero-product" aria-live="polite">
+            {heroProducts.map((product, index) => <Link to={`/produits/${product.id}`} className={`hero-product-slide${index === activeHeroIndex ? ' active' : ''}`} aria-hidden={index !== activeHeroIndex} tabIndex={index === activeHeroIndex ? 0 : -1} key={product.id}>
+              <img src={product.image} alt={product.name}/>
+              <div><span>{product.categoryName || 'Sélection Dom G'}</span><strong>{product.name}</strong><b>{new Intl.NumberFormat('fr-FR').format(product.price)} FG</b></div>
+            </Link>)}
+            {heroProducts.length > 1 ? <div className="hero-product-dots" aria-label="Produits présentés">{heroProducts.map((product, index) => <button type="button" className={index === activeHeroIndex ? 'active' : ''} onClick={() => setHeroIndex(index)} aria-label={`Afficher ${product.name}`} aria-current={index === activeHeroIndex ? 'true' : undefined} key={product.id}/>)}</div> : null}
+          </div> : <div className="hero-empty"><PackageCheck/><span>Votre prochaine découverte vous attend</span></div>}
           <span className="hero-stamp">Dom G<br/>Selection</span>
         </div>
       </div>
