@@ -19,6 +19,7 @@ export function ProtectedRoute({children}:{children:ReactNode}){
  if(!authUser)return <Navigate to="/connexion" state={{from:location.pathname}} replace/>
  if(authError||!profile)return <AccessMessage title="Profil indisponible" message={authError??'Votre profil applicatif est introuvable.'}/>
  if(profile.status!=='actif')return <AccessMessage title="Accès désactivé" message="Votre compte est inactif. Contactez un administrateur."/>
+ if(profile.role!=='client')return <Navigate to={profile.role==='admin'?'/admin':'/'} replace/>
  return children
 }
 

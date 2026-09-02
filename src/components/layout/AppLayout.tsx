@@ -72,7 +72,7 @@ export function AppLayout() {
       <div className="footer-brand"><Logo inverse/><p>L’essentiel, avec confiance.</p><span>Conakry · Guinée</span></div>
       <div><h3>Boutique</h3><a href="/#nouveautes">Nouveautés</a><Link to="/promotions">Promotions</Link><Link to="/categories">Catégories</Link></div>
       <div><h3>Aide</h3><Link to="/compte/commandes">Livraison</Link><Link to="/compte/commandes">Retours</Link><Link to={accountPath}>Contact</Link></div>
-      <div><h3>Dom G Store</h3><Link to="/">À propos</Link><Link to="/">Conditions</Link><Link to="/">Confidentialité</Link></div>
+      <div><h3>Dom G Store</h3><Link to="/a-propos">À propos</Link><Link to="/conditions">Conditions</Link><Link to="/confidentialite">Confidentialité</Link></div>
     </div><div className="container copyright"><span>© 2026 Dom G Store</span><span>Qualité · Fiabilité · Service local</span></div></footer>
   </>
 }

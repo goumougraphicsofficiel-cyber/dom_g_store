@@ -1,12 +1,15 @@
 /* eslint-disable react-refresh/only-export-components */
-import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react'
+import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
 import type { User as SupabaseUser } from '@supabase/supabase-js'
 import { toast } from 'sonner'
 import { supabase } from '../lib/supabase'
 import { fetchProfile, signIn, signOut, signUpClient, type ClientRegistrationInput, type ClientRegistrationResult } from '../services/authService'
-import { customerService, orderService, promotionService, reviewService } from '../services'
+import { customerService, orderService, promotionService } from '../services'
 import { storefrontProductService } from '../services/storefrontProductService'
 import { supabaseCategoryService } from '../services/supabaseCategoryService'
+import { supabaseAddressService } from '../services/supabaseAddressService'
+import { supabaseProfileService, type ProfileUpdate } from '../services/supabaseProfileService'
+import { supabaseReviewService } from '../services/supabaseReviewService'
 import { storage } from '../services/storage'
 import type { Address, AuthProfile, CartLine, Category, Order, Product, Promotion, Review, User } from '../types'
 
@@ -16,10 +19,11 @@ type StoreValue={
  catalogLoading:boolean;catalogError:string|null
  orders:Order[];setOrders:(v:Order[])=>void
  customers:User[];setCustomers:(v:User[])=>void
- reviews:Review[];setReviews:(v:Review[])=>void
+ reviews:Review[]
  promotions:Promotion[];setPromotions:(v:Promotion[])=>void
  cart:CartLine[];favorites:string[];user:User|null
  authUser:SupabaseUser|null;profile:AuthProfile|null;authLoading:boolean;authError:string|null
+ addressesLoading:boolean;addressesError:string|null
  theme:'light'|'dark'
  addCart:(id:string,q?:number,color?:string,size?:string)=>void
  updateCart:(id:string,q:number,color?:string,size?:string)=>void
@@ -28,7 +32,9 @@ type StoreValue={
  toggleFavorite:(id:string)=>void
  login:(email:string,password:string)=>Promise<AuthProfile>
  register:(input:ClientRegistrationInput)=>Promise<ClientRegistrationResult>
- logout:()=>Promise<void>;updateUser:(u:User)=>void;toggleTheme:()=>void;saveOrder:(o:Order)=>void
+ logout:()=>Promise<void>;updateUser:(u:User)=>void;updateProfile:(input:ProfileUpdate)=>Promise<void>
+ saveAddress:(address:Address)=>Promise<Address>;deleteAddress:(id:string)=>Promise<void>;setPrimaryAddress:(id:string)=>Promise<void>
+ toggleTheme:()=>void;saveOrder:(o:Order)=>void
 }
 
 const Ctx=createContext<StoreValue|null>(null)
@@ -47,7 +53,9 @@ function normalizeCart(lines:CartLine[],products:Product[]){
  })
 }
 
-function toAppUser(authUser:SupabaseUser,profile:AuthProfile):User{
+const favoritesKey=(userId:string|null)=>userId?`favorites:${userId}`:'favorites:guest'
+
+function toAppUser(authUser:SupabaseUser,profile:AuthProfile,addresses:Address[]=[]):User{
  return {
   id:profile.id,
   firstName:profile.first_name??'',
@@ -56,21 +64,23 @@ function toAppUser(authUser:SupabaseUser,profile:AuthProfile):User{
   phone:profile.phone??'',
   role:profile.role==='admin'?'admin':'client',
   avatar:profile.avatar_url??undefined,
-  addresses:[],
+  addresses,
   active:profile.status==='actif',
   joinedAt:authUser.created_at.slice(0,10),
  }
 }
 
 export function StoreProvider({children}:{children:ReactNode}){
- const [products,setP]=useState<Product[]>([]),[categories,setC]=useState<Category[]>([]),[orders,setO]=useState(()=>orderService.list()),[customers,setCu]=useState(()=>customerService.list()),[reviews,setR]=useState(()=>reviewService.list()),[promotions,setPr]=useState(()=>promotionService.list())
+ const [products,setP]=useState<Product[]>([]),[categories,setC]=useState<Category[]>([]),[orders,setO]=useState(()=>orderService.list()),[customers,setCu]=useState(()=>customerService.list()),[reviews,setR]=useState<Review[]>([]),[promotions,setPr]=useState(()=>promotionService.list())
  const [catalogLoading,setCatalogLoading]=useState(true),[catalogError,setCatalogError]=useState<string|null>(null)
- const [cart,setCart]=useState<CartLine[]>(()=>storage.get('cart',[])),[favorites,setFavorites]=useState<string[]>(()=>storage.get('favorites',[])),[theme,setTheme]=useState<'light'|'dark'>(()=>storage.get('theme','light'))
+ const [cart,setCart]=useState<CartLine[]>(()=>storage.get('cart',[])),[favorites,setFavorites]=useState<string[]>(()=>storage.get(favoritesKey(null),storage.get('favorites',[]))),[theme,setTheme]=useState<'light'|'dark'>(()=>storage.get('theme','light'))
+ const favoritesOwner=useRef<string|null>(null)
  const [authUser,setAuthUser]=useState<SupabaseUser|null>(null),[profile,setProfile]=useState<AuthProfile|null>(null),[user,setUser]=useState<User|null>(null),[authLoading,setAuthLoading]=useState(true),[authError,setAuthError]=useState<string|null>(null)
+ const [addressesLoading,setAddressesLoading]=useState(false),[addressesError,setAddressesError]=useState<string|null>(null)
 
  useEffect(()=>{document.documentElement.classList.toggle('dark',theme==='dark');storage.set('theme',theme)},[theme])
  useEffect(()=>storage.set('cart',cart),[cart])
- useEffect(()=>storage.set('favorites',favorites),[favorites])
+ useEffect(()=>storage.set(favoritesKey(favoritesOwner.current),favorites),[favorites])
 
  useEffect(()=>{
   let active=true
@@ -91,17 +101,25 @@ export function StoreProvider({children}:{children:ReactNode}){
   return()=>{active=false}
  },[])
 
+ useEffect(()=>{let active=true;void supabaseReviewService.listPublic().then(rows=>{if(active)setR(rows)}).catch(error=>{console.error('Impossible de charger les avis publics depuis Supabase.',error)});return()=>{active=false}},[])
+
  const applyAuthenticatedUser=useCallback(async(nextUser:SupabaseUser|null)=>{
-  if(!nextUser){setAuthUser(null);setProfile(null);setUser(null);setAuthError(null);setAuthLoading(false);return}
+  const nextOwner=nextUser?.id??null
+  favoritesOwner.current=nextOwner
+  setFavorites(storage.get(favoritesKey(nextOwner),nextOwner?[]:storage.get('favorites',[])))
+  if(!nextUser){setAuthUser(null);setProfile(null);setUser(null);setAuthError(null);setAddressesError(null);setAuthLoading(false);return}
   setAuthLoading(true);setAuthUser(nextUser);setAuthError(null)
   try{
    const nextProfile=await fetchProfile(nextUser.id)
+   setAddressesLoading(true)
+   let addresses:Address[]=[]
+   try{addresses=await supabaseAddressService.listOwn();setAddressesError(null)}catch(error){setAddressesError(error instanceof Error?error.message:'Impossible de charger vos adresses.')}
    setProfile(nextProfile)
-   setUser(toAppUser(nextUser,nextProfile))
+   setUser(toAppUser(nextUser,nextProfile,addresses))
   }catch(error){
    setProfile(null);setUser(null)
    setAuthError(error instanceof Error?error.message:'Impossible de charger le profil.')
-  }finally{setAuthLoading(false)}
+  }finally{setAddressesLoading(false);setAuthLoading(false)}
  },[])
 
  useEffect(()=>{
@@ -123,12 +141,16 @@ export function StoreProvider({children}:{children:ReactNode}){
  const removeCart=(id:string,color?:string,size?:string)=>{setCart(old=>old.filter(line=>!sameCartLine(line,id,color,size)));toast.success('Produit retiré.')}
  const clearCart=()=>{if(!cart.length)return;setCart([]);toast.success('Panier vidé.')}
  const toggleFavorite=(id:string)=>setFavorites(old=>{const has=old.includes(id);toast.success(has?'Retiré des favoris':'Ajouté aux favoris');return has?old.filter(x=>x!==id):[...old,id]})
- const login=async(email:string,password:string)=>{const result=await signIn(email,password);setAuthUser(result.user);setProfile(result.profile);setUser(toAppUser(result.user,result.profile));setAuthError(null);return result.profile}
- const register=async(input:ClientRegistrationInput)=>{const result=await signUpClient(input);if(result.profile){setAuthUser(result.user);setProfile(result.profile);setUser(toAppUser(result.user,result.profile));setAuthError(null)}return result}
- const logout=async()=>{try{await signOut()}catch(error){toast.error(error instanceof Error?error.message:'La déconnexion a échoué.')}finally{setAuthUser(null);setProfile(null);setUser(null);setAuthError(null)}toast.success('Vous êtes déconnecté')}
+ const login=async(email:string,password:string)=>{const result=await signIn(email,password);favoritesOwner.current=result.user.id;setFavorites(storage.get(favoritesKey(result.user.id),[]));setAuthUser(result.user);setProfile(result.profile);setUser(toAppUser(result.user,result.profile));setAuthError(null);return result.profile}
+ const register=async(input:ClientRegistrationInput)=>{const result=await signUpClient(input);if(result.profile){favoritesOwner.current=result.user.id;setFavorites(storage.get(favoritesKey(result.user.id),[]));setAuthUser(result.user);setProfile(result.profile);setUser(toAppUser(result.user,result.profile));setAuthError(null)}return result}
+ const logout=async()=>{try{await signOut()}catch(error){toast.error(error instanceof Error?error.message:'La déconnexion a échoué.')}finally{favoritesOwner.current=null;setFavorites(storage.get(favoritesKey(null),storage.get('favorites',[])));setAuthUser(null);setProfile(null);setUser(null);setAuthError(null)}toast.success('Vous êtes déconnecté')}
  const updateUser=(nextUser:User)=>{setUser(nextUser);const all=customers.map(x=>x.id===nextUser.id?nextUser:x);setCu(all);customerService.save(all)}
+ const updateProfile=async(input:ProfileUpdate)=>{const nextProfile=await supabaseProfileService.updateOwn(input);setProfile(nextProfile);setUser(current=>current?{...current,firstName:nextProfile.first_name??'',lastName:nextProfile.last_name??'',phone:nextProfile.phone??'',avatar:nextProfile.avatar_url??undefined}:current)}
+ const saveAddress=async(address:Address)=>{const saved=address.id?await supabaseAddressService.update(address):await supabaseAddressService.create(address);setUser(current=>{if(!current)return current;const next=current.addresses.some(item=>item.id===saved.id)?current.addresses.map(item=>item.id===saved.id?saved:item):[...current.addresses,saved];return {...current,addresses:saved.primary?next.map(item=>({...item,primary:item.id===saved.id})):next}});return saved}
+ const deleteAddress=async(id:string)=>{await supabaseAddressService.remove(id);setUser(current=>current?{...current,addresses:current.addresses.filter(item=>item.id!==id)}:current)}
+ const setPrimaryAddress=async(id:string)=>{await supabaseAddressService.setDefault(id);setUser(current=>current?{...current,addresses:current.addresses.map(item=>({...item,primary:item.id===id}))}:current)}
  const saveOrder=(order:Order)=>{const all=[order,...orders];setO(all);orderService.save(all);setCart([])}
- const value={products,setProducts:setP,categories,setCategories:setC,catalogLoading,catalogError,orders,setOrders:persist(setO,orderService),customers,setCustomers:persist(setCu,customerService),reviews,setReviews:persist(setR,reviewService),promotions,setPromotions:persist(setPr,promotionService),cart,favorites,user,authUser,profile,authLoading,authError,theme,addCart,updateCart,removeCart,clearCart,toggleFavorite,login,register,logout,updateUser,toggleTheme:()=>setTheme(x=>x==='light'?'dark':'light'),saveOrder}
+ const value={products,setProducts:setP,categories,setCategories:setC,catalogLoading,catalogError,orders,setOrders:persist(setO,orderService),customers,setCustomers:persist(setCu,customerService),reviews,promotions,setPromotions:persist(setPr,promotionService),cart,favorites,user,authUser,profile,authLoading,authError,addressesLoading,addressesError,theme,addCart,updateCart,removeCart,clearCart,toggleFavorite,login,register,logout,updateUser,updateProfile,saveAddress,deleteAddress,setPrimaryAddress,toggleTheme:()=>setTheme(x=>x==='light'?'dark':'light'),saveOrder}
  return <Ctx.Provider value={value}>{children}</Ctx.Provider>
 }
 

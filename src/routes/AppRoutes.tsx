@@ -13,6 +13,9 @@ const FavoritesPage = lazy(() => import('../pages/shop/ShopPages').then(module =
 const CategoryPage = lazy(() => import('../pages/shop/ShopPages').then(module => ({ default: module.CategoryPage })))
 const PromotionsPage = lazy(() => import('../pages/shop/ShopPages').then(module => ({ default: module.PromotionsPage })))
 const SearchPage = lazy(() => import('../pages/shop/ShopPages').then(module => ({ default: module.SearchPage })))
+const AboutPage = lazy(() => import('../pages/shop/LegalPages').then(module => ({ default: module.AboutPage })))
+const ConditionsPage = lazy(() => import('../pages/shop/LegalPages').then(module => ({ default: module.ConditionsPage })))
+const PrivacyPage = lazy(() => import('../pages/shop/LegalPages').then(module => ({ default: module.PrivacyPage })))
 
 const LoginPage = lazy(() => import('../pages/auth/AuthPages').then(module => ({ default: module.LoginPage })))
 const RegisterPage = lazy(() => import('../pages/auth/AuthPages').then(module => ({ default: module.RegisterPage })))
@@ -65,6 +68,9 @@ export function AppRoutes() {
         <Route path="recherche" element={<SearchPage/>}/>
         <Route path="panier" element={<CartPage/>}/>
         <Route path="favoris" element={<FavoritesPage/>}/>
+        <Route path="a-propos" element={<AboutPage/>}/>
+        <Route path="conditions" element={<ConditionsPage/>}/>
+        <Route path="confidentialite" element={<PrivacyPage/>}/>
         <Route path="compte" element={<ProtectedRoute><AccountDashboard/></ProtectedRoute>}/>
         <Route path="compte/profil" element={<ProtectedRoute><ProfilePage/></ProtectedRoute>}/>
         <Route path="compte/adresses" element={<ProtectedRoute><AddressesPage/></ProtectedRoute>}/>

@@ -8,7 +8,7 @@ import { createOrderNumber, OrderCreationError, supabaseOrderService, type Admin
 import { storefrontProductService } from '../../services/storefrontProductService'
 import { sendOrderConfirmationEmails } from '../../services/transactionalEmailService'
 import type { Address } from '../../types'
-import { money, uid } from '../../utils'
+import { money } from '../../utils'
 
 const deliveryOptions = [
   { id: 'standard', name: 'Livraison standard', delay: '2 à 4 jours', price: 50000 },
@@ -23,7 +23,7 @@ function checkoutError(error: unknown) {
 }
 
 export function SupabaseCheckoutPage() {
-  const { cart, products, setProducts, user, authUser, updateUser, clearCart } = useStore()
+  const { cart, products, setProducts, user, authUser, saveAddress, clearCart } = useStore()
   const navigate = useNavigate()
   const [step, setStep] = useState(1)
   const [address, setAddress] = useState<Address>(user?.addresses.find(item => item.primary) ?? user?.addresses[0] ?? emptyAddress())
@@ -40,12 +40,18 @@ export function SupabaseCheckoutPage() {
   const delivery = deliveryOptions.find(option => option.id === deliveryId) ?? deliveryOptions[0]
   const total = subtotal + delivery.price
 
-  const next = () => {
+  const next = async () => {
     if (step === 2 && (!address.firstName || !address.lastName || !address.phone || !address.address || !address.city)) return toast.error('Complétez les informations de livraison obligatoires.')
     if (step === 2 && user && !user.addresses.some(item => item.id === address.id)) {
-      const savedAddress = { ...address, id: uid('a'), primary: user.addresses.length === 0 }
-      updateUser({ ...user, addresses: [...user.addresses, savedAddress] })
-      setAddress(savedAddress)
+      setBusy(true)
+      try {
+        const savedAddress = await saveAddress({ ...address, primary: user.addresses.length === 0 })
+        setAddress(savedAddress)
+        toast.success('Adresse enregistrée')
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : 'Impossible d’enregistrer l’adresse.')
+        return
+      } finally { setBusy(false) }
     }
     setStep(current => Math.min(4, current + 1))
   }
@@ -111,7 +117,7 @@ export function SupabaseCheckoutPage() {
       {step === 2 ? <><h2>Adresse de livraison</h2>{user?.addresses.length ? <div className="address-options">{user.addresses.map(item => <label className={address.id === item.id ? 'selected' : ''} key={item.id}><input type="radio" checked={address.id === item.id} onChange={() => setAddress(item)}/><span><strong>{item.firstName} {item.lastName}</strong><small>{item.address}, {item.city}</small></span></label>)}</div> : null}<h3>{user?.addresses.length ? 'Ou ajouter une nouvelle adresse' : 'Votre adresse'}</h3><div className="form-grid">{([['firstName', 'Prénom'], ['lastName', 'Nom'], ['phone', 'Téléphone'], ['address', 'Adresse'], ['district', 'Quartier']] as const).map(([key, label]) => <label key={key}>{label}<Input value={address[key]} onChange={event => setAddress({ ...address, id: '', [key]: event.target.value })}/></label>)}<label>Ville<select value={address.city} onChange={event => setAddress({ ...address, city: event.target.value })}>{['Conakry', 'Kindia', 'Mamou', 'Labé', 'Kankan', 'Nzérékoré', 'Autre ville'].map(city => <option key={city}>{city}</option>)}</select></label></div></> : null}
       {step === 3 ? <><h2>Mode de livraison</h2><div className="select-cards">{deliveryOptions.map(option => <label className={deliveryId === option.id ? 'selected' : ''} key={option.id}><input type="radio" checked={deliveryId === option.id} onChange={() => setDeliveryId(option.id)}/><span><strong>{option.name}</strong><small>{option.delay}</small></span><b>{option.price ? money(option.price) : 'Gratuit'}</b></label>)}</div></> : null}
       {step === 4 ? <><h2>Paiement simulé</h2><div className="select-cards">{['Carte bancaire', 'Mobile Money', 'Paiement à la livraison'].map(option => <label className={payment === option ? 'selected' : ''} key={option}><input type="radio" checked={payment === option} onChange={() => setPayment(option)}/><span><strong>{option}</strong><small>Aucun débit réel ne sera effectué</small></span></label>)}</div></> : null}
-      <div className="checkout-buttons">{step > 1 ? <Button className="secondary" disabled={busy} onClick={() => setStep(current => current - 1)}>Retour</Button> : null}{step < 4 ? <Button onClick={next}>Continuer <ChevronRight/></Button> : <Button disabled={busy} onClick={() => void confirm()}>{busy ? 'Enregistrement…' : 'Confirmer la commande'}</Button>}</div>
+      <div className="checkout-buttons">{step > 1 ? <Button className="secondary" disabled={busy} onClick={() => setStep(current => current - 1)}>Retour</Button> : null}{step < 4 ? <Button disabled={busy} onClick={() => void next()}>{busy?'Enregistrement…':<>Continuer <ChevronRight/></>}</Button> : <Button disabled={busy} onClick={() => void confirm()}>{busy ? 'Enregistrement…' : 'Confirmer la commande'}</Button>}</div>
     </Card><Card className="summary"><h2>Total</h2><div><span>Sous-total</span><b>{money(subtotal)}</b></div><div><span>Livraison</span><b>{money(delivery.price)}</b></div><div className="total"><span>À payer</span><b>{money(total)}</b></div><small>Le paiement est simulé. La commande et ses articles seront enregistrés dans Supabase.</small></Card></div>
   </div>
 }
