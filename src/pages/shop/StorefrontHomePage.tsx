@@ -30,7 +30,7 @@ export function StorefrontHomePage() {
   const heroProduct = heroProducts[activeHeroIndex] ?? products[0]
   const featuredProducts = products.filter(product => product.featured)
   const essentials = (featuredProducts.length > 0 ? featuredProducts : products).slice(0, 4)
-  const newProducts = products.filter(product => product.isNew).slice(0, 4)
+  const newProducts = products.slice(0, 4)
   const discountedProducts = products.filter(product => product.oldPrice !== undefined).slice(0, 4)
 
   useEffect(() => {
