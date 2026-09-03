@@ -1,10 +1,12 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { ArrowRight, Headphones, PackageCheck, ShieldCheck, Sparkles, Truck } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { CategoryImage } from '../../components/category/CategoryImage'
 import { ProductGrid } from '../../components/product/ProductCard'
 import { EmptyState, LoadingSkeleton, PageHeader } from '../../components/ui'
 import { useStore } from '../../context/StoreContext'
+import { supabaseNewsletterService } from '../../services/supabaseNewsletterService'
+import { toast } from 'sonner'
 import type { Product } from '../../types'
 
 function ProductSection({ id, eyebrow, title, subtitle, products, emptyText }: { id?: string; eyebrow: string; title: string; subtitle: string; products: Product[]; emptyText: string }) {
@@ -22,6 +24,8 @@ export function StorefrontHomePage() {
     return [...displayable.filter(product => product.featured), ...displayable.filter(product => !product.featured && product.stock > 0), ...displayable.filter(product => !product.featured && product.stock <= 0)].slice(0, 4)
   }, [products])
   const [heroIndex, setHeroIndex] = useState(0)
+  const [newsletterEmail, setNewsletterEmail] = useState('')
+  const [newsletterBusy, setNewsletterBusy] = useState(false)
   const activeHeroIndex = heroProducts.length > 0 ? heroIndex % heroProducts.length : 0
   const heroProduct = heroProducts[activeHeroIndex] ?? products[0]
   const featuredProducts = products.filter(product => product.featured)
@@ -34,6 +38,17 @@ export function StorefrontHomePage() {
     const interval = window.setInterval(() => setHeroIndex(current => (current + 1) % heroProducts.length), 4800)
     return () => window.clearInterval(interval)
   }, [heroProducts.length])
+
+  const subscribeNewsletter=async(event:FormEvent<HTMLFormElement>)=>{
+    event.preventDefault()
+    if(newsletterBusy)return
+    setNewsletterBusy(true)
+    try{
+      const result=await supabaseNewsletterService.subscribe(newsletterEmail)
+      setNewsletterEmail('')
+      toast.success(result==='already_subscribed'?'Cette adresse est déjà inscrite.':'Inscription à la newsletter confirmée.')
+    }catch(error){toast.error(error instanceof Error?error.message:'Impossible de vous inscrire pour le moment.')}finally{setNewsletterBusy(false)}
+  }
 
   if (catalogLoading) return <div className="container section"><LoadingSkeleton/></div>
   if (catalogError) return <div className="container section"><EmptyState title="Impossible de charger la boutique" text={catalogError}/></div>
@@ -65,7 +80,13 @@ export function StorefrontHomePage() {
       </div>
     </section>
 
+    <ProductSection id="nouveautes" eyebrow="Tout juste arrivés" title="Nouveautés" subtitle="Découvrez les dernières références ajoutées à la boutique." products={newProducts} emptyText="Aucune nouveauté disponible"/>
+    <section className="container promo-banner reveal-section"><div><span className="section-kicker">Offres Dom G</span><h2>Des offres pensées pour vous.</h2><p>Profitez de nos meilleures sélections et découvrez les promotions du moment.</p><Link className="btn gold-button" to="/promotions">Voir les promotions <ArrowRight/></Link></div>{(discountedProducts[0]??heroProduct)?.image?<img src={(discountedProducts[0]??heroProduct)?.image} alt={(discountedProducts[0]??heroProduct)?.name}/>:null}</section>
+    <ProductSection eyebrow="Opportunités du moment" title="Promotions" subtitle="Les vrais prix remisés actuellement disponibles." products={discountedProducts} emptyText="Aucune promotion disponible"/>
+
     <section className="trust-bar reveal-section"><div className="container trust-grid"><div><Truck/><span><strong>Livraison rapide</strong><small>Suivie jusqu’à destination</small></span></div><div><ShieldCheck/><span><strong>Paiement sécurisé</strong><small>Un parcours protégé</small></span></div><div><PackageCheck/><span><strong>Produits sélectionnés</strong><small>Qualité et fiabilité</small></span></div><div><Headphones/><span><strong>Service client</strong><small>Une équipe locale</small></span></div></div></section>
+
+    <ProductSection eyebrow="Le choix Dom G" title="Nos incontournables" subtitle={featuredProducts.length > 0 ? 'Les références qui font la différence.' : 'Une sélection issue de notre catalogue actuel.'} products={essentials} emptyText="Aucun produit disponible"/>
 
     <section className="section container reveal-section category-showcase">
       <span className="section-kicker">Explorez nos univers</span>
@@ -76,14 +97,9 @@ export function StorefrontHomePage() {
       })}</div> : <EmptyState title="Aucune catégorie disponible"/>}
     </section>
 
-    <ProductSection eyebrow="Le choix Dom G" title="Nos incontournables" subtitle={featuredProducts.length > 0 ? 'Les références qui font la différence.' : 'Une sélection issue de notre catalogue actuel.'} products={essentials} emptyText="Aucun produit disponible"/>
-    <ProductSection id="nouveautes" eyebrow="Tout juste arrivés" title="Nouveautés" subtitle="Découvrez les dernières références ajoutées à la boutique." products={newProducts} emptyText="Aucune nouveauté disponible"/>
-    <section className="container promo-banner reveal-section"><div><span className="section-kicker">Offres Dom G</span><h2>Des offres pensées pour vous.</h2><p>Profitez de nos meilleures sélections et découvrez les promotions du moment.</p><Link className="btn gold-button" to="/promotions">Voir les promotions <ArrowRight/></Link></div>{(discountedProducts[0]??heroProduct)?.image?<img src={(discountedProducts[0]??heroProduct)?.image} alt={(discountedProducts[0]??heroProduct)?.name}/>:null}</section>
-    <ProductSection eyebrow="Opportunités du moment" title="Promotions" subtitle="Les vrais prix remisés actuellement disponibles." products={discountedProducts} emptyText="Aucune promotion disponible"/>
-
     <section className="section container reveal-section"><div className="newsletter">
       <div><span className="section-kicker">Le meilleur de Dom G</span><h2>Une longueur d’avance sur les nouveautés.</h2><p>Recevez nos arrivages et offres directement dans votre boîte mail.</p></div>
-      <div className="newsletter-note"><strong>Newsletter bientôt disponible</strong><span>Aucune inscription ne sera enregistrée pour le moment.</span></div>
+      <form onSubmit={subscribeNewsletter}><input className="input" required type="email" autoComplete="email" maxLength={254} value={newsletterEmail} onChange={event=>setNewsletterEmail(event.target.value)} placeholder="votre@email.com" aria-label="Votre adresse e-mail"/><button className="btn gold-button" disabled={newsletterBusy}>{newsletterBusy?'Inscription…':'S’inscrire'}</button></form>
     </div></section>
   </>
 }
