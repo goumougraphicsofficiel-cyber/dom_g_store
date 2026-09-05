@@ -1,11 +1,11 @@
-import { useState, type ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useForm } from 'react-hook-form'
 import { z } from 'zod'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { toast } from 'sonner'
 import { useStore } from '../../context/StoreContext'
-import { requestPasswordReset, updatePassword } from '../../services/authService'
+import { requestPasswordReset, resendSignupConfirmation, updatePassword } from '../../services/authService'
 import { Logo } from '../../components/layout/AppLayout'
 import { Button, Card, Input } from '../../components/ui'
 import { PasswordInput } from '../../components/auth/PasswordInput'
@@ -29,10 +29,12 @@ type RegisterForm=z.infer<typeof registerSchema>
 
 export function RegisterPage(){
  const {register:signup}=useStore(),navigate=useNavigate()
- const [busy,setBusy]=useState(false),[confirmationEmail,setConfirmationEmail]=useState('')
+ const [busy,setBusy]=useState(false),[resending,setResending]=useState(false),[resendCooldown,setResendCooldown]=useState(0),[confirmationEmail,setConfirmationEmail]=useState('')
  const {register,handleSubmit,formState:{errors}}=useForm<RegisterForm>({resolver:zodResolver(registerSchema),defaultValues:{terms:false}})
+ useEffect(()=>{if(resendCooldown<=0)return;const timer=window.setTimeout(()=>setResendCooldown(value=>value-1),1000);return()=>window.clearTimeout(timer)},[resendCooldown])
  const submit=async(values:RegisterForm)=>{setBusy(true);try{const result=await signup(values);if(result.confirmationRequired){setConfirmationEmail(values.email);toast.success('Compte créé. Confirmez votre adresse e-mail.')}else{toast.success('Votre compte a été créé.');navigate('/compte',{replace:true})}}catch(error){toast.error(error instanceof Error?error.message:'L’inscription a échoué.')}finally{setBusy(false)}}
- if(confirmationEmail)return <AuthShell title="Confirmez votre adresse e-mail" subtitle="Votre compte client a bien été créé."><div className="success-message" role="status"><h3>Vérifiez votre messagerie</h3><p>Un lien de confirmation a été envoyé à <strong>{confirmationEmail}</strong>.</p><Link to="/connexion">Retour à la connexion</Link></div></AuthShell>
+ const resendConfirmation=async()=>{if(resending||resendCooldown>0)return;setResending(true);try{await resendSignupConfirmation(confirmationEmail);setResendCooldown(60);toast.success('Un nouvel e-mail de confirmation a été envoyé.')}catch(error){toast.error(error instanceof Error?error.message:'Le renvoi de l’e-mail a échoué.')}finally{setResending(false)}}
+ if(confirmationEmail)return <AuthShell title="Confirmez votre adresse e-mail" subtitle="Votre compte client a bien été créé."><div className="success-message" role="status"><h3>Vérifiez votre messagerie</h3><p>Un lien de confirmation a été envoyé à <strong>{confirmationEmail}</strong>.</p><p>Consultez également vos courriers indésirables. La réception peut prendre quelques minutes.</p><Button type="button" className="full" disabled={resending||resendCooldown>0} onClick={resendConfirmation}>{resending?'Renvoi en cours…':resendCooldown>0?`Renvoyer dans ${resendCooldown} s`:'Renvoyer l’e-mail'}</Button><Link to="/connexion">Retour à la connexion</Link></div></AuthShell>
  return <AuthShell title="Créer votre compte" subtitle="Créez votre espace client Dom G Store."><form onSubmit={handleSubmit(submit)}><div className="form-grid"><FormField label="Prénom" error={errors.firstName?.message}><Input {...register('firstName')} autoComplete="given-name"/></FormField><FormField label="Nom" error={errors.lastName?.message}><Input {...register('lastName')} autoComplete="family-name"/></FormField><FormField label="Téléphone" error={errors.phone?.message}><Input {...register('phone')} autoComplete="tel"/></FormField><FormField label="E-mail" error={errors.email?.message}><Input {...register('email')} type="email" autoComplete="email"/></FormField><FormField label="Mot de passe" error={errors.password?.message}><PasswordInput {...register('password')} autoComplete="new-password"/></FormField><FormField label="Confirmation" error={errors.confirm?.message}><PasswordInput {...register('confirm')} autoComplete="new-password"/></FormField></div><label className="check"><input type="checkbox" {...register('terms')}/> J’accepte les <Link to="/conditions">conditions générales</Link>.</label>{errors.terms?<small className="error">{errors.terms.message}</small>:null}<Button className="full" disabled={busy}>{busy?'Création du compte…':'Créer mon compte'}</Button></form><p className="auth-link">Déjà inscrit ? <Link to="/connexion">Se connecter</Link></p></AuthShell>
 }
 
